@@ -130,12 +130,15 @@ def FilterCourses(courses):
     return courses
 
 def GetCourseFCEAverage(fce_json):
+    if len(fce_json) == 0:
+        return 0
     fce_sum = 0
     index = 0
-    for index, entry in enumerate(fce_json):
+    for entry in fce_json:
         if entry["semester"] == "fall" or entry["semester"] == "spring":
             fce_sum += entry["hrsPerWeek"]
-    return fce_sum / (index + 1)
+            index += 1
+    return round(fce_sum / index, 1)
 
 def GetFceInfo(course):
     course_info_url = "https://course.apis.scottylabs.org/courses/courseID"
