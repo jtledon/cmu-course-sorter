@@ -106,8 +106,9 @@ def ParseCourseNumbers(course_number_tags):
         except:
             units = math.inf
 
-        if (len(course) <= 9):
-            continue
+        req_num_fields = 10
+        if (len(course) < req_num_fields):
+            course.extend([None]*(req_num_fields-len(course)))
 
         courses.add(
                 CourseInfo(
