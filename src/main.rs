@@ -1,4 +1,4 @@
-use scraper::{Html, Selector};
+use scraper::Html;
 
 struct Course {
     name: String,

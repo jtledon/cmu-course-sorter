@@ -56,15 +56,15 @@ class CourseInfo:
 
     def __repr__(self):
         return f"{{ CourseNumber({self.number}) Units({self.units}) FCE({self.fce}) }}"
-    
+
     # @classmethod
     @staticmethod
     def GetDepartmentFromCourseNumber(course_number):
-        return int(course_number[0:1+1]) 
+        return int(course_number[0:1+1])
 
     @staticmethod
     def GetLevelFromCourseNumber(course_number):
-        return int(course_number[2]) 
+        return int(course_number[2])
 
     def SetFCE(self, fce):
         self.fce = fce
