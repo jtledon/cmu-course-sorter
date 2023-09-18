@@ -13,7 +13,7 @@ from pprint import pprint
 
 parser = argparse.ArgumentParser(
                     prog='cmu-course-sorter',
-                    description='Find CMU classes that fit your criteria, sorted by FCE'
+                    description='Find CMU classes that fit your criteria, sorted by FCE. An example usage might look like the following: `python3 cmu-course-sorter.py -u 12 -d 15 18 -d 10 16  -l 6 7 8 9`'
                     )
 parser.add_argument("-u", "--units",
                     type=int,
