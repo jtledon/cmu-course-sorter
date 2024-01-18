@@ -1,9 +1,5 @@
 import requests
-from bs4 import BeautifulSoup
-from multiprocessing import Pool
-
-import re, math
-import argparse, json
+import argparse, json, re
 
 from pprint import pprint
 
@@ -28,6 +24,9 @@ parser.add_argument("-l", "--level",
                     type=int, required=False,
                     nargs="+", action="extend"
                     )
+parser.add_argument("-t", "--token",
+                    type=str, required=False, # TODO: make required?
+                    )
 parser.add_argument("-s", "--semester",
                     type=str, required=False,
                     choices=["fall", "spring"], default="spring"
@@ -41,134 +40,116 @@ parser.add_argument("--sorter",
                     )
 args = parser.parse_args()
 
-class CourseInfo:
-    def __init__(self, name, number, units, professor, location):
-        self.name = name
+def FetchCourseList(location, local=False):
+    local_file = "courses_website_response.html"
+    if (local):
+        with open(local_file, "r") as f:
+            response = f.read()
+        return response
 
-        self.number = number
-        self.department = self.GetDepartmentFromCourseNumber(number)
-        self.level = self.GetLevelFromCourseNumber(number)
+    response = requests.get(location)
+    with open(local_file, "w") as f:
+        f.write(response.text)
+    return response.text
 
-        self.units = units
-        self.professor = professor
-        self.location = location
-        self.fce = None
+def ParseOutCourseNumbers(response):
+    course_number_regex = re.compile(r"\d{5}")
+    nums = re.findall(course_number_regex, response)
+    return nums
 
-    def __repr__(self):
-        return f"{{ CourseNumber({self.number}) Units({self.units}) FCE({self.fce}) }}"
+# Filter out all the classes that I can up front so I don't DoS the cmu-courses api
+def FilterOutDepartmentAndLevel(course_nums):
+    def IsInDept(course_num_str):
+        return int(course_num_str[:2]) in args.department
+    filter_depts = filter(IsInDept, course_nums)
+    # print(list(filter_depts))
 
-    # @classmethod
-    @staticmethod
-    def GetDepartmentFromCourseNumber(course_number):
-        return int(course_number[0:1+1])
+    def IsCorrectLevel(course_num_str):
+        return int(course_num_str[3]) in args.level
+    filter_level = filter(IsCorrectLevel, filter_depts)
+    # print(list(filter_level))
 
-    @staticmethod
-    def GetLevelFromCourseNumber(course_number):
-        return int(course_number[2])
+    return list(filter_level)
 
-    def SetFCE(self, fce):
-        self.fce = fce
-        return
+def FilterOutUnits(course_jsons, units_dict):
+    def IsProperNumUnits(course):
+        print(course)
+        print(units_dict)
+        print(units_dict[course["courseID"]])
+        return True
+    return list(filter(IsProperNumUnits, course_jsons))
 
-    def GetFCE(self):
-        return self.fce
 
+def GenerateApiRequestString(course_nums):
+    req = ""
+    for course_num in course_nums:
+        req += f"&courseID={course_num}" # NOTE: might need to provide it in XX-XXX format at some point
+    return req[1:] # cut off the & for the first course num
 
-def FetchCourseList(location):
-    # response = requests.get(location)
-    # only need to run once to get the file which I will continue to read from
-    # with open(location, "a") as f:
-    #     f.write(response.text)
+def RequestFceData(courses_arr):
+    # course_info_url = "https://course.apis.scottylabs.org/courses/courseID"
+    # fce_info_url = "https://course.apis.scottylabs.org/fces/courseID"
+    fce_api_endpoint = "https://course-tools.apis.scottylabs.org/fces?"
 
-    with open(location, "r") as f:
-        response = f.read()
+    token_val = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHBsaWNhdGlvbklkIjoiNjE4NmRlYTQwNWY2YzA0ZjI2OTg3OTgzIiwidXNlcklkIjoiNjI1YjZhYmIwODgxN2MwMDA4MzM5YTMxIiwiZW1haWwiOiJqbGVkb25AYW5kcmV3LmNtdS5lZHUiLCJpYXQiOjE3MDQ5NTg4NTEsImV4cCI6MTcwNjI1NDg1MX0.l5mtAFzS4NpaVYBZ5gYbDnwfAF3ia9oLw7Xr5m7Cj-c7FLhCdFI5ff9enoFhCMRjO7mHdMvE1Z6DVu6GfB9SlNUWDDBKIYg4QGfde3c6GZLUy83NZAYORmIUZbMqmyIdXLJlPMSfkd96btI2ZiY5Ru4GnYrAtKGvbbvWxoyPCPyah2E_LzD6c_PClA7Fvm7HImcpCmpAeWHQx0L80LG1t4oVyRwcT58gjJU2daHG960rIsKJeHdtWEplAwh3s1LrZ1LMCspIp536bJDtZ0Sx8veEoBDe9G7OF3HFRqjoMbgWn8gorRgkmsCwj8Qj88U_hXYT4b0q1c6MCDkvt3Xa6J9TC1vlkXfmihvG25KUEiEE7cFe9b1-kTjVHRLXOn2j05nnurCFKMKZ2W5yXcfPhJKQnMT0JizKsQgUAAMQxeg9IGI8TcumdHSzNRFX00ljL71c_gSqX9JK0B7sxyguDA5JdzqIEk5fRoklPx6ni4eC_b8-V2LjKffI6-n5xVQf6-tstj7Q3ejdb7Ka2xFKku0QgCk0xekOyGJ8MNo25R-d-YYyPt_RlUZ7hx_Xyp_WmZ9IEdla8z_sMXCnf-MViBZqPWFHwFO2s5XOmv16PkERcmB8MI4W-1ZoJdWZ7Aoz6YB5Bv6vkKTu-q8PIvp1sK7SZDygb8Yx-ib4lPjOKPc"
+    raw_data = {"token": token_val}
+    headers_dict = {"Content-Type": "application/json"}
 
-    return response
+    fce_json = []
+    chunk_size = 20
+    while courses_arr:
+        chunk, courses_arr = courses_arr[:chunk_size], courses_arr[chunk_size:]
 
-def ParseCourseNumberTags(response):
-    # when Im just reading from the file, I don't need to extract the content
-    # parsed = BeautifulSoup(response.content, "html5lib") # pip install html5lib
-    parsed = BeautifulSoup(response, "html5lib") # pip install html5lib
-    course_numbers = parsed.find_all("td", string=re.compile(r"\d{5}"))
-    return course_numbers
+        chunk_courses_query_str = GenerateApiRequestString(chunk)
+        link = fce_api_endpoint + chunk_courses_query_str
+        print(link)
 
-def ParseCourseNumbers(course_number_tags):
-    courses = set()
-    for course_number in course_number_tags:#[0:5]:
-        tag = course_number
-        course = list()
-        while tag != None:
-            course.append(tag.find(string=True))
-            tag = tag.next_sibling
+        chunk_fce_resp = requests.post(link, data=raw_data)
+        chunk_fce_json = json.loads(chunk_fce_resp.text)
+        # pprint(chunk_fce_json)
+        fce_json += chunk_fce_json
 
-        try:
-            units = int(float(course[2]))
-        except:
-            units = math.inf
+    return fce_json
 
-        req_num_fields = 10
-        if (len(course) < req_num_fields):
-            course.extend([None]*(req_num_fields-len(course)))
+def RequestAllData():
+    courses_info_endpoint = "https://course-tools.apis.scottylabs.org/courses/search?"
 
-        courses.add(
-                CourseInfo(
-                    course[1], # name
-                    course[0], # number
-                    units, # units
-                    course[9], # prof
-                    course[8], # location
-                ))
-    # pprint(courses)
-    return courses
+    levels = ""
+    for level in sorted(args.level): levels += str(level)
+    query_str = f"levels={levels}&unitsMin={min(args.units)}&unitsMax={max(args.units)}"
+    link = courses_info_endpoint + query_str
 
-def FilterCourses(courses):
-    if (args.units != None):
-        courses = filter(lambda course: course.units in args.units, courses)
-    if (args.department != None):
-        courses = filter(lambda course: course.department in args.department, courses)
-    if (args.level != None):
-        courses = filter(lambda course: course.level in args.level, courses)
-    return courses
+    token_val = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHBsaWNhdGlvbklkIjoiNjE4NmRlYTQwNWY2YzA0ZjI2OTg3OTgzIiwidXNlcklkIjoiNjI1YjZhYmIwODgxN2MwMDA4MzM5YTMxIiwiZW1haWwiOiJqbGVkb25AYW5kcmV3LmNtdS5lZHUiLCJpYXQiOjE3MDQ5NTg4NTEsImV4cCI6MTcwNjI1NDg1MX0.l5mtAFzS4NpaVYBZ5gYbDnwfAF3ia9oLw7Xr5m7Cj-c7FLhCdFI5ff9enoFhCMRjO7mHdMvE1Z6DVu6GfB9SlNUWDDBKIYg4QGfde3c6GZLUy83NZAYORmIUZbMqmyIdXLJlPMSfkd96btI2ZiY5Ru4GnYrAtKGvbbvWxoyPCPyah2E_LzD6c_PClA7Fvm7HImcpCmpAeWHQx0L80LG1t4oVyRwcT58gjJU2daHG960rIsKJeHdtWEplAwh3s1LrZ1LMCspIp536bJDtZ0Sx8veEoBDe9G7OF3HFRqjoMbgWn8gorRgkmsCwj8Qj88U_hXYT4b0q1c6MCDkvt3Xa6J9TC1vlkXfmihvG25KUEiEE7cFe9b1-kTjVHRLXOn2j05nnurCFKMKZ2W5yXcfPhJKQnMT0JizKsQgUAAMQxeg9IGI8TcumdHSzNRFX00ljL71c_gSqX9JK0B7sxyguDA5JdzqIEk5fRoklPx6ni4eC_b8-V2LjKffI6-n5xVQf6-tstj7Q3ejdb7Ka2xFKku0QgCk0xekOyGJ8MNo25R-d-YYyPt_RlUZ7hx_Xyp_WmZ9IEdla8z_sMXCnf-MViBZqPWFHwFO2s5XOmv16PkERcmB8MI4W-1ZoJdWZ7Aoz6YB5Bv6vkKTu-q8PIvp1sK7SZDygb8Yx-ib4lPjOKPc"
+    raw_data = {"token": token_val}
 
-def GetCourseFCEAverage(fce_json):
-    if len(fce_json) == 0:
-        return 0
-    fce_sum = 0
-    index = 0
-    for entry in fce_json:
-        if entry["semester"] == "fall" or entry["semester"] == "spring":
-            fce_sum += entry["hrsPerWeek"]
-            index += 1
-    return round(fce_sum / index, 1)
+    course_info = requests.post(link, data=raw_data)
+    course_json = json.loads(course_info.text)
+    # print(course_json["docs"])
+    return course_json["docs"]
 
-def GetFceInfo(course):
-    course_info_url = "https://course.apis.scottylabs.org/courses/courseID"
-    fce_info_url = "https://course.apis.scottylabs.org/fces/courseID"
-
-    # info = requests.get(f"{course_info_url}/{course.number}")
-    fce = requests.get(f"{fce_info_url}/{course.number}")
-    fce_json = json.loads(fce.text)
-
-    course.SetFCE(GetCourseFCEAverage(fce_json))
-    return course
+def MakeUnitsMap(course_info):
+    units_dict = dict()
+    for course in course_info:
+        units_dict[course["courseID"]] = course["units"]
+    # print(units_dict)
+    return units_dict
 
 def main():
     print(args)
 
-    courses_website_link = "coures_website_response.html"
-    # courses_website_link = "https://enr-apps.as.cmu.edu/assets/SOC/sched_layout_fall.htm"
-    response = FetchCourseList(courses_website_link)
-    course_number_tags = ParseCourseNumberTags(response)
-    courses = ParseCourseNumbers(course_number_tags)
+    courses_website_link = "https://enr-apps.as.cmu.edu/assets/SOC/sched_layout_spring.htm"
+    response = FetchCourseList(courses_website_link, local=False)
 
-    filtered_courses = list(FilterCourses(courses))
+    course_nums = ParseOutCourseNumbers(response)
+    filter_department_and_level = FilterOutDepartmentAndLevel(course_nums)
+    course_fce_data = RequestFceData(filter_department_and_level)
+    # course_info = RequestAllData()
+    # units_dict = MakeUnitsMap(course_info)
+    # filter_units = FilterOutUnits(course_fce_data, units_dict)
 
-    for course in filtered_courses:
-        GetFceInfo(course)
-    # pprint(filtered_courses)
-
-    sorted_courses = sorted(filtered_courses, key=lambda course: course.GetFCE())
-    pprint(sorted_courses)
+    sorted_courses = sorted(course_fce_data, key=lambda course: course['hrsPerWeek'])
+    for course in sorted_courses:
+        print(f"{course['courseID']} {round(course['hrsPerWeek'], 2):<5} {course['courseName']}")
 
     return
 
